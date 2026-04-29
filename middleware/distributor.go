@@ -27,6 +27,12 @@ type ModelRequest struct {
 	Group string `json:"group,omitempty"`
 }
 
+func isPlaygroundRelayPath(path string) bool {
+	return strings.HasPrefix(path, "/pg/chat/completions") ||
+		strings.HasPrefix(path, "/pg/images/generations") ||
+		strings.HasPrefix(path, "/pg/images/edits")
+}
+
 func Distribute() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		var channel *model.Channel
@@ -81,8 +87,7 @@ func Distribute() func(c *gin.Context) {
 				}
 				var selectGroup string
 				usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
-				// check path is /pg/chat/completions
-				if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") {
+				if isPlaygroundRelayPath(c.Request.URL.Path) {
 					playgroundRequest := &dto.PlayGroundRequest{}
 					err = common.UnmarshalBodyReusable(c, playgroundRequest)
 					if err != nil {
@@ -325,8 +330,7 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 		}
 		c.Set("relay_mode", relayMode)
 	}
-	if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") {
-		// playground chat completions
+	if isPlaygroundRelayPath(c.Request.URL.Path) {
 		req, err := getModelFromRequest(c)
 		if err != nil {
 			return nil, false, err

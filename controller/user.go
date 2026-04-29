@@ -461,6 +461,7 @@ func generateDefaultSidebarConfig(userRole int) string {
 	defaultConfig["chat"] = map[string]interface{}{
 		"enabled":    true,
 		"playground": true,
+		"image":      true,
 		"chat":       true,
 	}
 
@@ -534,10 +535,32 @@ func GetUserModels(c *gin.Context) {
 			}
 		}
 	}
+
+	data := any(models)
+	detail := strings.TrimSpace(c.Query("detail"))
+	if detail == "1" || strings.EqualFold(detail, "true") {
+		detailedModels := make([]dto.OpenAIModels, 0, len(models))
+		for _, modelName := range models {
+			if oaiModel, ok := openAIModelsMap[modelName]; ok {
+				oaiModel.SupportedEndpointTypes = model.GetModelSupportEndpointTypes(modelName)
+				detailedModels = append(detailedModels, oaiModel)
+				continue
+			}
+			detailedModels = append(detailedModels, dto.OpenAIModels{
+				Id:                     modelName,
+				Object:                 "model",
+				Created:                1626777600,
+				OwnedBy:                "custom",
+				SupportedEndpointTypes: model.GetModelSupportEndpointTypes(modelName),
+			})
+		}
+		data = detailedModels
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    models,
+		"data":    data,
 	})
 	return
 }

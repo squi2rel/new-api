@@ -53,6 +53,7 @@ func SetApiRouter(router *gin.Engine) {
 
 		// Universal secure verification routes
 		apiRouter.POST("/verify", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.UniversalVerify)
+		apiRouter.GET("/user/self/playground/images/:id/content", middleware.SessionAuth(), controller.GetPlaygroundImageContent)
 
 		userRoute := apiRouter.Group("/user")
 		{
@@ -112,6 +113,9 @@ func SetApiRouter(router *gin.Engine) {
 				// Custom OAuth bindings
 				selfRoute.GET("/oauth/bindings", controller.GetUserOAuthBindings)
 				selfRoute.DELETE("/oauth/bindings/:provider_id", controller.UnbindCustomOAuth)
+				selfRoute.GET("/self/playground/images", controller.ListPlaygroundImages)
+				selfRoute.POST("/self/playground/images", controller.SavePlaygroundImages)
+				selfRoute.DELETE("/self/playground/images/:id", controller.DeletePlaygroundImage)
 			}
 
 			adminRoute := userRoute.Group("/")
