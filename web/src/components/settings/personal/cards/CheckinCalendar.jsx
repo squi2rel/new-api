@@ -44,6 +44,7 @@ const CheckinCalendar = ({ t, status, turnstileEnabled, turnstileSiteKey }) => {
   const [checkinLoading, setCheckinLoading] = useState(false);
   const [turnstileModalVisible, setTurnstileModalVisible] = useState(false);
   const [turnstileWidgetKey, setTurnstileWidgetKey] = useState(0);
+  const [visualCheckedIn, setVisualCheckedIn] = useState(false);
   const [checkinData, setCheckinData] = useState({
     enabled: false,
     stats: {
@@ -90,6 +91,7 @@ const CheckinCalendar = ({ t, status, turnstileEnabled, turnstileSiteKey }) => {
       const { success, data, message } = res.data;
       if (success) {
         setCheckinData(data);
+        setVisualCheckedIn(data.stats?.checked_in_today ?? false);
         // 首次加载时，根据签到状态设置折叠状态
         if (isFirstLoad) {
           setIsCollapsed(data.stats?.checked_in_today ?? false);
@@ -132,6 +134,7 @@ const CheckinCalendar = ({ t, status, turnstileEnabled, turnstileSiteKey }) => {
       const res = await postCheckin(token);
       const { success, data, message } = res.data;
       if (success) {
+        setVisualCheckedIn(true);
         showSuccess(
           t('签到成功！获得') + ' ' + renderQuota(data.quota_awarded),
         );
@@ -169,6 +172,8 @@ const CheckinCalendar = ({ t, status, turnstileEnabled, turnstileSiteKey }) => {
   if (!status?.checkin_enabled) {
     return null;
   }
+
+  const isCheckedInToday = visualCheckedIn || checkinData.stats?.checked_in_today;
 
   // 日期渲染函数 - 显示签到状态和获得的额度
   const dateRender = (dateString) => {
@@ -312,20 +317,77 @@ const CheckinCalendar = ({ t, status, turnstileEnabled, turnstileSiteKey }) => {
 
         {/* 签到日历 - 使用更紧凑的样式 */}
         <Spin spinning={loading}>
-          <div className='border rounded-lg overflow-hidden checkin-calendar'>
+          <div
+            className={`border rounded-lg overflow-hidden checkin-calendar ${isCheckedInToday ? 'checkin-calendar--checked' : ''}`}
+          >
             <style>{`
+            .checkin-calendar {
+              position: relative;
+              isolation: isolate;
+              background: rgba(255, 255, 255, 0.68);
+            }
+            .checkin-calendar::before {
+              content: '';
+              position: absolute;
+              inset: 0;
+              z-index: 0;
+              background-image: url('/logo.png');
+              background-repeat: no-repeat;
+              background-position: center;
+              background-size: contain;
+              filter: blur(18px);
+              transform: scale(1.08);
+              opacity: 0.42;
+              transition:
+                filter 520ms cubic-bezier(0.22, 1, 0.36, 1),
+                opacity 520ms cubic-bezier(0.22, 1, 0.36, 1),
+                transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
+              pointer-events: none;
+            }
+            .checkin-calendar::after {
+              content: '';
+              position: absolute;
+              inset: 0;
+              z-index: 0;
+              background: rgba(255, 255, 255, 0.35);
+              transition: background 520ms cubic-bezier(0.22, 1, 0.36, 1);
+              pointer-events: none;
+            }
+            .checkin-calendar.checkin-calendar--checked::before {
+              filter: blur(0px);
+              transform: scale(1);
+              opacity: 0.28;
+            }
+            .checkin-calendar.checkin-calendar--checked::after {
+              background: rgba(255, 255, 255, 0.2);
+            }
+            .dark .checkin-calendar {
+              background: rgba(15, 23, 42, 0.58);
+            }
+            .dark .checkin-calendar::after {
+              background: rgba(15, 23, 42, 0.46);
+            }
+            .dark .checkin-calendar.checkin-calendar--checked::after {
+              background: rgba(15, 23, 42, 0.28);
+            }
             .checkin-calendar .semi-calendar {
+              position: relative;
+              z-index: 1;
               font-size: 13px;
+              background: transparent;
             }
             .checkin-calendar .semi-calendar-month-header {
               padding: 8px 12px;
+              background: transparent;
             }
             .checkin-calendar .semi-calendar-month-week-row {
               height: 28px;
+              background: transparent;
             }
             .checkin-calendar .semi-calendar-month-week-row th {
               font-size: 12px;
               padding: 4px 0;
+              background: transparent;
             }
             .checkin-calendar .semi-calendar-month-grid-row {
               height: auto;
@@ -333,10 +395,13 @@ const CheckinCalendar = ({ t, status, turnstileEnabled, turnstileSiteKey }) => {
             .checkin-calendar .semi-calendar-month-grid-row td {
               height: 56px;
               padding: 2px;
+              background: transparent;
             }
             .checkin-calendar .semi-calendar-month-grid-row-cell {
               position: relative;
               height: 100%;
+              border-radius: 10px;
+              overflow: hidden;
             }
             .checkin-calendar .semi-calendar-month-grid-row-cell-day {
               position: absolute;
@@ -348,6 +413,9 @@ const CheckinCalendar = ({ t, status, turnstileEnabled, turnstileSiteKey }) => {
             }
             .checkin-calendar .semi-calendar-month-same {
               background: transparent;
+            }
+            .checkin-calendar .semi-calendar-month-other .semi-calendar-month-grid-row-cell-day {
+              opacity: 0.45;
             }
             .checkin-calendar .semi-calendar-month-today .semi-calendar-month-grid-row-cell-day {
               background: var(--semi-color-primary);
