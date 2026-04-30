@@ -43,7 +43,6 @@ import {
   Eraser,
   ImagePlus,
   Images,
-  LoaderCircle,
   Search,
   SquarePen,
   Sparkles,
@@ -61,6 +60,7 @@ import {
   showError,
 } from '../../helpers';
 import { UserContext } from '../../context/User';
+import { useActualTheme } from '../../context/Theme';
 import './index.css';
 
 const { Title, Text } = Typography;
@@ -80,7 +80,7 @@ const DEFAULT_CONFIG = {
 };
 
 const EXAMPLE_PROMPTS = [
-  '赛博朋克城市夜景，霓虹雨幕，电影感光影，8k',
+  '赛博朋克城市夜景，霓虹雨幕，电影感光影',
   '玻璃质感产品渲染，白底棚拍，高级商业摄影',
   '山间木屋清晨薄雾，柔和逆光，真实摄影风格',
   '一只猫娘，二次元风格，背景是现实',
@@ -98,6 +98,298 @@ const RATIOS = [
   { label: '竖版', ratio: '3:4', width: 3, height: 4, size: '1024x1792' },
   { label: '长图', ratio: '2:3', width: 2, height: 3, size: '1024x1792' },
 ];
+
+const LOADING_SURFACE_THEME = {
+  dark: {
+    background: '#262626',
+    overlayBackground: 'rgba(255, 255, 255, 0.06)',
+    overlayBorder: 'rgba(255, 255, 255, 0.08)',
+    textColor: 'rgba(245, 245, 245, 0.82)',
+    captionColor: 'rgba(245, 245, 245, 0.66)',
+    glowInner: 'rgba(230, 230, 224, 0.038)',
+    glowOuter: 'rgba(210, 210, 205, 0.022)',
+    dotBase: 152,
+    dotPeak: 248,
+  },
+  light: {
+    background: '#f3f3f1',
+    overlayBackground: 'rgba(24, 24, 24, 0.045)',
+    overlayBorder: 'rgba(24, 24, 24, 0.08)',
+    textColor: 'rgba(24, 24, 24, 0.78)',
+    captionColor: 'rgba(24, 24, 24, 0.62)',
+    glowInner: 'rgba(56, 56, 56, 0.045)',
+    glowOuter: 'rgba(64, 64, 64, 0.02)',
+    dotBase: 132,
+    dotPeak: 22,
+  },
+};
+
+function ImagePlaygroundLoadingSurface({ theme }) {
+  const hostRef = useRef(null);
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    const canvas = canvasRef.current;
+    if (!host || !canvas) {
+      return undefined;
+    }
+
+    const ctx = canvas.getContext('2d', { alpha: false });
+    if (!ctx) {
+      return undefined;
+    }
+
+    const palette = LOADING_SURFACE_THEME[theme] || LOADING_SURFACE_THEME.dark;
+    const config = {
+      spacing: 16,
+      minRadius: 0.63,
+      maxRadius: 2.625,
+      baseAlpha: 0.18,
+      maxAlpha: 0.94,
+      blobCount: 7,
+      glowScale: theme === 'dark' ? 0.22 : 0.18,
+      speed: 0.00123,
+    };
+
+    let width = 0;
+    let height = 0;
+    let dpr = 1;
+    let viewScale = 1;
+    let animationFrameId = 0;
+    let points = [];
+    let blobs = [];
+
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+    const smoothstep = (edge0, edge1, value) => {
+      const t = clamp((value - edge0) / (edge1 - edge0), 0, 1);
+      return t * t * (3 - 2 * t);
+    };
+
+    const makeBlob = (index) => {
+      const order = (index * 3) % config.blobCount;
+      return {
+        phaseX: Math.random() * Math.PI * 2,
+        phaseY: Math.random() * Math.PI * 2,
+        phaseA: Math.random() * Math.PI * 2,
+        phaseB: Math.random() * Math.PI * 2,
+        phaseR: Math.random() * Math.PI * 2,
+        speedX: 0.28 + Math.random() * 0.36,
+        speedY: 0.24 + Math.random() * 0.42,
+        wanderX: 0.08 + Math.random() * 0.11,
+        wanderY: 0.11 + Math.random() * 0.16,
+        radius: 120 + Math.random() * 145,
+        weight: 0.68 + Math.random() * 0.48,
+        homeX: 0.12 + 0.76 * ((index + 0.5) / config.blobCount),
+        homeY: 0.16 + 0.68 * ((order + 0.5) / config.blobCount),
+      };
+    };
+
+    const rebuild = () => {
+      const rect = host.getBoundingClientRect();
+      width = Math.max(1, Math.floor(rect.width));
+      height = Math.max(1, Math.floor(rect.height));
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      viewScale = clamp(Math.min(width / 960, height / 620), 0.36, 1.15);
+
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      const spacing = config.spacing;
+      const margin = spacing * 1.35;
+      const cols = Math.floor((width - margin * 2) / spacing) + 1;
+      const rows = Math.floor((height - margin * 2) / spacing) + 1;
+      const startX = (width - (cols - 1) * spacing) / 2;
+      const startY = (height - (rows - 1) * spacing) / 2;
+
+      points = [];
+      for (let y = 0; y < rows; y += 1) {
+        for (let x = 0; x < cols; x += 1) {
+          points.push({
+            x: startX + x * spacing,
+            y: startY + y * spacing,
+            seed: Math.sin(x * 91.7 + y * 43.3) * 43758.5453 % 1,
+            nx: x / Math.max(cols - 1, 1),
+            ny: y / Math.max(rows - 1, 1),
+          });
+        }
+      }
+
+      if (blobs.length !== config.blobCount) {
+        blobs = Array.from({ length: config.blobCount }, (_, index) =>
+          makeBlob(index),
+        );
+      }
+    };
+
+    const blobPosition = (blob, time) => {
+      const x =
+        width * blob.homeX +
+        Math.sin(time * blob.speedX + blob.phaseX) * width * blob.wanderX +
+        Math.sin(time * (blob.speedY * 1.83 + 0.11) + blob.phaseA) *
+          width *
+          0.055 +
+        Math.cos(time * 0.17 + blob.phaseY) * width * 0.025;
+
+      const y =
+        height * blob.homeY +
+        Math.sin(time * blob.speedY + blob.phaseY) * height * blob.wanderY +
+        Math.cos(time * (blob.speedX * 1.47 + 0.09) + blob.phaseB) *
+          height *
+          0.085 +
+        Math.sin(time * 0.13 + blob.phaseA) * height * 0.035;
+
+      const radius =
+        blob.radius * viewScale * (0.76 + 0.28 * Math.sin(time * 0.65 + blob.phaseR));
+
+      return {
+        x: clamp(x, radius * 0.35, width - radius * 0.35),
+        y: clamp(y, radius * 0.35, height - radius * 0.35),
+        r: radius,
+      };
+    };
+
+    const fieldAt = (point, blobStates, time) => {
+      let field = 0;
+
+      for (const blob of blobStates) {
+        const dx = point.x - blob.x;
+        const dy = point.y - blob.y;
+        const dist2 = dx * dx + dy * dy;
+        field += blob.weight * Math.exp(-dist2 / (2 * blob.r * blob.r));
+      }
+
+      const stream =
+        0.12 * Math.sin(point.ny * Math.PI * 3.2 - time * 1.4) +
+        0.08 *
+          Math.sin(
+            (point.nx * 3.7 + point.ny * 2.1) * Math.PI +
+              time * 0.92 +
+              point.seed * 2,
+          );
+
+      return field + stream;
+    };
+
+    const drawBackground = () => {
+      ctx.fillStyle = palette.background;
+      ctx.fillRect(0, 0, width, height);
+
+      const topGradient = ctx.createRadialGradient(
+        width * 0.3,
+        height * 0.2,
+        0,
+        width * 0.3,
+        height * 0.2,
+        Math.max(width, height) * 0.34,
+      );
+      topGradient.addColorStop(
+        0,
+        theme === 'dark' ? 'rgba(255,255,255,0.055)' : 'rgba(0,0,0,0.05)',
+      );
+      topGradient.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = topGradient;
+      ctx.fillRect(0, 0, width, height);
+
+      const bottomGradient = ctx.createRadialGradient(
+        width * 0.78,
+        height * 0.72,
+        0,
+        width * 0.78,
+        height * 0.72,
+        Math.max(width, height) * 0.19,
+      );
+      bottomGradient.addColorStop(
+        0,
+        theme === 'dark' ? 'rgba(255,255,255,0.0175)' : 'rgba(0,0,0,0.016)',
+      );
+      bottomGradient.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = bottomGradient;
+      ctx.fillRect(0, 0, width, height);
+    };
+
+    const render = (now) => {
+      const time = now * config.speed;
+      drawBackground();
+
+      const blobStates = blobs.map((blob) => ({
+        ...blobPosition(blob, time),
+        weight: blob.weight,
+      }));
+
+      for (const blob of blobStates) {
+        const gradient = ctx.createRadialGradient(
+          blob.x,
+          blob.y,
+          0,
+          blob.x,
+          blob.y,
+          blob.r * 1.45,
+        );
+        gradient.addColorStop(0, palette.glowInner);
+        gradient.addColorStop(0.58, palette.glowOuter);
+        gradient.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(blob.x, blob.y, blob.r * 1.45, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      for (const point of points) {
+        const raw = fieldAt(point, blobStates, time);
+        const lit = smoothstep(0.38, 1.38, raw);
+        const pulse =
+          0.05 *
+          Math.sin(
+            time * 2.2 +
+              point.x * 0.035 +
+              point.y * 0.021 +
+              point.seed * 5,
+          );
+        const amount = clamp(lit + pulse, 0, 1);
+        const radius = config.minRadius + amount * (config.maxRadius - config.minRadius);
+        const alpha = config.baseAlpha + amount * (config.maxAlpha - config.baseAlpha);
+        const shade =
+          theme === 'dark'
+            ? Math.round(palette.dotBase + amount * (palette.dotPeak - palette.dotBase))
+            : Math.round(palette.dotBase - amount * (palette.dotBase - palette.dotPeak));
+
+        ctx.fillStyle = `rgba(${shade}, ${shade}, ${Math.min(255, shade + (theme === 'dark' ? 4 : 2))}, ${alpha})`;
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      animationFrameId = window.requestAnimationFrame(render);
+    };
+
+    rebuild();
+    animationFrameId = window.requestAnimationFrame(render);
+
+    const resizeObserver = new ResizeObserver(() => {
+      rebuild();
+    });
+    resizeObserver.observe(host);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrameId);
+      resizeObserver.disconnect();
+    };
+  }, [theme]);
+
+  return (
+    <div ref={hostRef} className='image-playground-loading-surface'>
+      <canvas
+        ref={canvasRef}
+        className='image-playground-loading-canvas'
+        aria-hidden='true'
+      />
+    </div>
+  );
+}
 
 function loadStoredConfig() {
   try {
@@ -271,6 +563,7 @@ function triggerLoginRedirect() {
 
 const ImagePlayground = () => {
   const { t } = useTranslation();
+  const actualTheme = useActualTheme();
   const [userState] = useContext(UserContext);
   const [config, setConfig] = useState(() => loadStoredConfig());
   const [groupOptions, setGroupOptions] = useState([]);
@@ -769,50 +1062,11 @@ const ImagePlayground = () => {
 
   const openPreview = useCallback(
     (url) => {
-      const previewWindow = window.open('', '_blank');
+      const previewWindow = window.open(url, '_blank', 'noopener,noreferrer');
 
       if (!previewWindow) {
         Toast.error(t('浏览器阻止了预览窗口，请允许弹窗后重试'));
-        return;
       }
-
-      previewWindow.opener = null;
-      previewWindow.document.write(`<!doctype html>
-<html lang="zh">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${t('图片预览')}</title>
-    <style>
-      html, body {
-        margin: 0;
-        height: 100%;
-        background: #0f1115;
-      }
-      body {
-        display: grid;
-        place-items: center;
-        padding: 24px;
-        box-sizing: border-box;
-      }
-      img {
-        max-width: 100%;
-        max-height: 100%;
-        object-fit: contain;
-        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
-        border-radius: 12px;
-      }
-    </style>
-  </head>
-  <body></body>
-</html>`);
-      previewWindow.document.close();
-
-      const image = previewWindow.document.createElement('img');
-      image.src = url;
-      image.alt = t('图片预览');
-      previewWindow.document.body.appendChild(image);
-      previewWindow.focus();
     },
     [t],
   );
@@ -852,27 +1106,33 @@ const ImagePlayground = () => {
     </div>
   );
 
-  const renderLoadingIndicator = () => (
-    <div className='image-playground-loading-mark' aria-hidden='true'>
-      <LoaderCircle
-        className='image-playground-loading-icon'
-        size={78}
-        strokeWidth={1.25}
-      />
-    </div>
-  );
+  const renderStageContent = ({
+    error,
+    historyLoading,
+    emptyDescription,
+    loadingPlaceholders = [],
+  }) => {
+    const placeholderItems = loadingPlaceholders.flatMap((placeholder) =>
+      Array.from({ length: Math.max(placeholder.count || 0, 1) }, (_, index) => ({
+        ...placeholder,
+        index,
+      })),
+    );
 
-  const renderStageContent = ({ error, loading, emptyDescription }) => {
-    if (loading && galleryItems.length === 0 && !error) {
+    if (
+      historyLoading &&
+      galleryItems.length === 0 &&
+      placeholderItems.length === 0 &&
+      !error
+    ) {
       return (
         <div className='image-playground-state'>
-          {renderLoadingIndicator()}
           <Text type='tertiary'>{t('正在加载图片历史')}</Text>
         </div>
       );
     }
 
-    if (error && galleryItems.length === 0) {
+    if (error && galleryItems.length === 0 && placeholderItems.length === 0) {
       return (
         <div className='image-playground-state image-playground-error'>
           <Text>{error}</Text>
@@ -880,7 +1140,7 @@ const ImagePlayground = () => {
       );
     }
 
-    if (galleryItems.length === 0) {
+    if (galleryItems.length === 0 && placeholderItems.length === 0) {
       return (
         <div className='image-playground-state'>
           <Empty
@@ -900,6 +1160,38 @@ const ImagePlayground = () => {
           </div>
         ) : null}
         <div className='image-playground-result-grid'>
+          {placeholderItems.map((placeholder) => (
+            <div
+              key={`loading-placeholder-${placeholder.key}-${placeholder.index}`}
+              className='image-playground-result-item image-playground-result-placeholder'
+            >
+              <div className='image-playground-result-overlay'>
+                <Tag size='small' color='blue'>
+                  {t('{{title}}，已用时 {{seconds}} 秒', {
+                    title: placeholder.title,
+                    seconds: placeholder.elapsedSeconds,
+                  })}
+                </Tag>
+                <div className='image-playground-result-placeholder-actions'>
+                  <Button
+                    theme='borderless'
+                    type='danger'
+                    icon={<X size={14} />}
+                    className='image-playground-result-delete'
+                    onClick={placeholder.onStop}
+                  />
+                </div>
+              </div>
+              <div className='image-playground-result-placeholder-media'>
+                <ImagePlaygroundLoadingSurface theme={actualTheme} />
+              </div>
+              <div className='image-playground-result-meta'>
+                <Text type='tertiary' size='small'>
+                  {t('这通常需要几十秒，请保持页面打开。')}
+                </Text>
+              </div>
+            </div>
+          ))}
           {galleryItems.map((item, index) => (
             <div
               key={`${item.id || item.url}-${index}`}
@@ -963,13 +1255,10 @@ const ImagePlayground = () => {
   };
 
   const renderResultStage = ({
-    loading,
     error,
     title,
-    loadingTitle,
     emptyDescription,
-    elapsedSeconds,
-    onStop,
+    loadingPlaceholders,
   }) => (
     <Card
       className='image-playground-stage-card'
@@ -987,57 +1276,50 @@ const ImagePlayground = () => {
                 : emptyDescription}
             </Text>
           </div>
-          <div
-            className={`image-playground-stop-action ${
-              loading ? 'is-visible' : ''
-            }`}
-          >
-            <Button
-              theme='light'
-              type='danger'
-              icon={<X size={16} />}
-              onClick={onStop}
-              disabled={!loading}
-              tabIndex={loading ? 0 : -1}
-            >
-              {t('停止')}
-            </Button>
-          </div>
         </div>
         <div className='image-playground-stage-body'>
           <div
-            className={`image-playground-stage-panel image-playground-stage-panel-loading ${
-              loading ? 'is-visible' : ''
-            }`}
-          >
-            <div className='image-playground-state'>
-              {renderLoadingIndicator()}
-              <Title heading={5} style={{ margin: 0 }}>
-                {loadingTitle}
-              </Title>
-              <Tag color='blue'>
-                {t('已用时 {{seconds}} 秒', { seconds: elapsedSeconds })}
-              </Tag>
-              <Text type='tertiary'>
-                {t('这通常需要几十秒，请保持页面打开。')}
-              </Text>
-            </div>
-          </div>
-          <div
-            className={`image-playground-stage-panel image-playground-stage-panel-content ${
-              loading ? '' : 'is-visible'
-            }`}
+            className='image-playground-stage-panel image-playground-stage-panel-content is-visible'
           >
             {renderStageContent({
               error,
-              loading: galleryLoading,
+              historyLoading: galleryLoading,
               emptyDescription,
+              loadingPlaceholders,
             })}
           </div>
         </div>
       </div>
     </Card>
   );
+
+  const sharedResultError = Array.from(
+    new Set([galleryError, textError, editError].filter(Boolean)),
+  ).join('；');
+  const sharedLoadingPlaceholders = [
+    ...(textGenerating
+      ? [
+          {
+            key: 'text2img',
+            title: t('正在生成图片'),
+            count: config.textCount,
+            elapsedSeconds: textElapsedSeconds,
+            onStop: stopTextGeneration,
+          },
+        ]
+      : []),
+    ...(editGenerating
+      ? [
+          {
+            key: 'img2img',
+            title: t('正在编辑图片'),
+            count: 1,
+            elapsedSeconds: editElapsedSeconds,
+            onStop: stopImageEdit,
+          },
+        ]
+      : []),
+  ];
 
   return (
     <div className='image-playground-page'>
@@ -1284,25 +1566,12 @@ const ImagePlayground = () => {
           </Card>
         </div>
 
-        {config.activeTab === 'text2img'
-          ? renderResultStage({
-              loading: textGenerating,
-              error: textError || galleryError,
-              title: t('最近生成的图片'),
-              loadingTitle: t('正在生成图片'),
-              emptyDescription: t('配置参数后开始生成'),
-              elapsedSeconds: textElapsedSeconds,
-              onStop: stopTextGeneration,
-            })
-          : renderResultStage({
-              loading: editGenerating,
-              error: editError || galleryError,
-              title: t('最近生成的图片'),
-              loadingTitle: t('正在编辑图片'),
-              emptyDescription: t('上传参考图并填写改动描述后开始生成'),
-              elapsedSeconds: editElapsedSeconds,
-              onStop: stopImageEdit,
-            })}
+        {renderResultStage({
+          error: sharedResultError,
+          title: t('最近生成的图片'),
+          emptyDescription: t('配置参数后开始生成'),
+          loadingPlaceholders: sharedLoadingPlaceholders,
+        })}
       </div>
     </div>
   );

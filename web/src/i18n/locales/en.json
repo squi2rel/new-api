@@ -3834,6 +3834,7 @@
     "正在加载图片历史": "Loading image history",
     "最近 {{count}} 张": "Latest {{count}} image(s)",
     "最近生成的图片": "Recent images",
+    "{{title}}，已用时 {{seconds}} 秒": "{{title}}, elapsed {{seconds}}s",
     "点击图片可在新窗口预览": "Click the image to preview it in a new window",
     "预览": "Preview",
     "下载": "Download"
