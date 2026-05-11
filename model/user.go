@@ -121,31 +121,38 @@ func generateDefaultSidebarConfigForRole(userRole int) string {
 
 	// 个人中心区域 - 所有用户都可以访问
 	defaultConfig["personal"] = map[string]interface{}{
-		"enabled":  true,
-		"topup":    true,
-		"personal": true,
+		"enabled":                 true,
+		"topup":                   true,
+		"subscription_activation": true,
+		"personal":                true,
 	}
 
 	// 管理员区域 - 根据角色决定
 	if userRole == common.RoleAdminUser {
 		// 管理员可以访问管理员区域，但不能访问系统设置
 		defaultConfig["admin"] = map[string]interface{}{
-			"enabled":    true,
-			"channel":    true,
-			"models":     true,
-			"redemption": true,
-			"user":       true,
-			"setting":    false, // 管理员不能访问系统设置
+			"enabled":         true,
+			"channel":         true,
+			"models":          true,
+			"deployment":      true,
+			"subscription":    true,
+			"redemption":      true,
+			"activation_code": true,
+			"user":            true,
+			"setting":         false, // 管理员不能访问系统设置
 		}
 	} else if userRole == common.RoleRootUser {
 		// 超级管理员可以访问所有功能
 		defaultConfig["admin"] = map[string]interface{}{
-			"enabled":    true,
-			"channel":    true,
-			"models":     true,
-			"redemption": true,
-			"user":       true,
-			"setting":    true,
+			"enabled":         true,
+			"channel":         true,
+			"models":          true,
+			"deployment":      true,
+			"subscription":    true,
+			"redemption":      true,
+			"activation_code": true,
+			"user":            true,
+			"setting":         true,
 		}
 	}
 	// 普通用户不包含admin区域
@@ -836,12 +843,13 @@ func GetUserGroup(id int, fromDB bool) (group string, err error) {
 		// Don't return error - fall through to DB
 	}
 	fromDB = true
-	err = DB.Model(&User{}).Where("id = ?", id).Select(commonGroupCol).Find(&group).Error
+	var user User
+	err = DB.Select("id", "group").Where("id = ?", id).First(&user).Error
 	if err != nil {
 		return "", err
 	}
 
-	return group, nil
+	return user.Group, nil
 }
 
 // GetUserSetting gets setting from Redis first, falls back to DB if needed

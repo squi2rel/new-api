@@ -35,7 +35,9 @@ const routerMap = {
   channel: '/console/channel',
   token: '/console/token',
   redemption: '/console/redemption',
+  activation_code: '/console/activation-codes',
   topup: '/console/topup',
+  subscription_activation: '/console/activate-subscription',
   user: '/console/user',
   subscription: '/console/subscription',
   log: '/console/log',
@@ -131,6 +133,11 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         to: '/topup',
       },
       {
+        text: t('激活订阅'),
+        itemKey: 'subscription_activation',
+        to: '/activate-subscription',
+      },
+      {
         text: t('个人设置'),
         itemKey: 'personal',
         to: '/personal',
@@ -176,6 +183,12 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('兑换码管理'),
         itemKey: 'redemption',
         to: '/redemption',
+        className: isAdmin() ? '' : 'tableHiddle',
+      },
+      {
+        text: t('激活码管理'),
+        itemKey: 'activation_code',
+        to: '/activation-codes',
         className: isAdmin() ? '' : 'tableHiddle',
       },
       {

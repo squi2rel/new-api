@@ -148,6 +148,7 @@ func SetApiRouter(router *gin.Engine) {
 			subscriptionRoute.GET("/plans", controller.GetSubscriptionPlans)
 			subscriptionRoute.GET("/self", controller.GetSubscriptionSelf)
 			subscriptionRoute.PUT("/self/preference", controller.UpdateSubscriptionPreference)
+			subscriptionRoute.POST("/activate", middleware.CriticalRateLimit(), controller.ActivateSubscriptionCode)
 			subscriptionRoute.POST("/epay/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestEpay)
 			subscriptionRoute.POST("/stripe/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestStripePay)
 			subscriptionRoute.POST("/creem/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestCreemPay)
@@ -166,6 +167,13 @@ func SetApiRouter(router *gin.Engine) {
 			subscriptionAdminRoute.POST("/users/:id/subscriptions", controller.AdminCreateUserSubscription)
 			subscriptionAdminRoute.POST("/user_subscriptions/:id/invalidate", controller.AdminInvalidateUserSubscription)
 			subscriptionAdminRoute.DELETE("/user_subscriptions/:id", controller.AdminDeleteUserSubscription)
+			subscriptionAdminRoute.GET("/activation-codes", controller.AdminListSubscriptionActivationCodes)
+			subscriptionAdminRoute.GET("/activation-codes/search", controller.AdminSearchSubscriptionActivationCodes)
+			subscriptionAdminRoute.GET("/activation-codes/:id", controller.AdminGetSubscriptionActivationCode)
+			subscriptionAdminRoute.POST("/activation-codes", controller.AdminAddSubscriptionActivationCode)
+			subscriptionAdminRoute.PUT("/activation-codes", controller.AdminUpdateSubscriptionActivationCode)
+			subscriptionAdminRoute.DELETE("/activation-codes/invalid", controller.AdminDeleteInvalidSubscriptionActivationCodes)
+			subscriptionAdminRoute.DELETE("/activation-codes/:id", controller.AdminDeleteSubscriptionActivationCode)
 		}
 
 		// Subscription payment callbacks (no auth)

@@ -73,6 +73,19 @@ function renderStatusTag(sub, t) {
   );
 }
 
+function renderSubscriptionSource(source, t) {
+  switch (source) {
+    case 'activation':
+      return t('激活码');
+    case 'admin':
+      return t('管理员发放');
+    case 'order':
+      return t('订单购买');
+    default:
+      return source || '-';
+  }
+}
+
 const UserSubscriptionsModal = ({ visible, onCancel, user, t, onSuccess }) => {
   const isMobile = useIsMobile();
   const [loading, setLoading] = useState(false);
@@ -266,7 +279,7 @@ const UserSubscriptionsModal = ({ visible, onCancel, user, t, onSuccess }) => {
             <div className='min-w-0'>
               <div className='font-medium truncate'>{title}</div>
               <div className='text-xs text-gray-500'>
-                {t('来源')}: {sub?.source || '-'}
+                {t('来源')}: {renderSubscriptionSource(sub?.source, t)}
               </div>
             </div>
           );

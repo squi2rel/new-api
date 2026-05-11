@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -38,6 +39,37 @@ import (
 type Adaptor struct {
 	ChannelType    int
 	ResponseFormat string
+}
+
+func collectImageFilesFromMultipartForm(mf *multipart.Form) ([]*multipart.FileHeader, error) {
+	if mf == nil || mf.File == nil {
+		return nil, errors.New("image is required")
+	}
+
+	imageFiles := make([]*multipart.FileHeader, 0)
+	if files := mf.File["image"]; len(files) > 0 {
+		imageFiles = append(imageFiles, files...)
+	}
+	if files := mf.File["image[]"]; len(files) > 0 {
+		imageFiles = append(imageFiles, files...)
+	}
+
+	indexedKeys := make([]string, 0)
+	for fieldName, files := range mf.File {
+		if strings.HasPrefix(fieldName, "image[") && len(files) > 0 {
+			indexedKeys = append(indexedKeys, fieldName)
+		}
+	}
+	sort.Strings(indexedKeys)
+	for _, fieldName := range indexedKeys {
+		imageFiles = append(imageFiles, mf.File[fieldName]...)
+	}
+
+	if len(imageFiles) == 0 {
+		return nil, errors.New("image is required")
+	}
+
+	return imageFiles, nil
 }
 
 func (a *Adaptor) ConvertGeminiRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeminiChatRequest) (any, error) {
@@ -453,28 +485,9 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 		}
 
 		if mf != nil && mf.File != nil {
-			// Check if "image" field exists in any form, including array notation
-			var imageFiles []*multipart.FileHeader
-			var exists bool
-
-			// First check for standard "image" field
-			if imageFiles, exists = mf.File["image"]; !exists || len(imageFiles) == 0 {
-				// If not found, check for "image[]" field
-				if imageFiles, exists = mf.File["image[]"]; !exists || len(imageFiles) == 0 {
-					// If still not found, iterate through all fields to find any that start with "image["
-					foundArrayImages := false
-					for fieldName, files := range mf.File {
-						if strings.HasPrefix(fieldName, "image[") && len(files) > 0 {
-							foundArrayImages = true
-							imageFiles = append(imageFiles, files...)
-						}
-					}
-
-					// If no image fields found at all
-					if !foundArrayImages && (len(imageFiles) == 0) {
-						return nil, errors.New("image is required")
-					}
-				}
+			imageFiles, err := collectImageFilesFromMultipartForm(mf)
+			if err != nil {
+				return nil, err
 			}
 
 			// Process all image files

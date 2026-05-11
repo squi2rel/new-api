@@ -29,6 +29,9 @@ import {
   Button,
   Card,
   Empty,
+  InputNumber,
+  Radio,
+  RadioGroup,
   Select,
   Slider,
   TabPane,
@@ -70,13 +73,30 @@ const IMAGE_MODEL = 'gpt-image-2';
 const RATIO_PREFIX_RE = /^\s*Make the aspect ratio\s+\S+\s*,\s*/i;
 const MAX_REFERENCE_IMAGES = 4;
 const MAX_REFERENCE_IMAGE_BYTES = 20 * 1024 * 1024;
+const DEFAULT_RATIO = '1:1';
+const DEFAULT_RESOLUTION_WIDTH = 1024;
+const DEFAULT_RESOLUTION_HEIGHT = 1024;
+const SIZE_MODE_RATIO = 'ratio';
+const SIZE_MODE_RESOLUTION = 'resolution';
+const RESOLUTION_STEP = 16;
+const MAX_RESOLUTION_EDGE = 3840;
+const MAX_RESOLUTION_RATIO = 3;
+const MAX_RESOLUTION_PIXELS = 8294400;
 
 const DEFAULT_CONFIG = {
   activeTab: 'text2img',
   group: '',
   textPrompt: '',
+  textRatio: DEFAULT_RATIO,
+  textSizeMode: SIZE_MODE_RATIO,
+  textResolutionWidth: DEFAULT_RESOLUTION_WIDTH,
+  textResolutionHeight: DEFAULT_RESOLUTION_HEIGHT,
   textCount: 1,
   editPrompt: '',
+  editRatio: DEFAULT_RATIO,
+  editSizeMode: SIZE_MODE_RATIO,
+  editResolutionWidth: DEFAULT_RESOLUTION_WIDTH,
+  editResolutionHeight: DEFAULT_RESOLUTION_HEIGHT,
 };
 
 const EXAMPLE_PROMPTS = [
@@ -123,6 +143,50 @@ const LOADING_SURFACE_THEME = {
     dotPeak: 22,
   },
 };
+
+function isValidRatioValue(ratio) {
+  return RATIOS.some((item) => item.ratio === ratio);
+}
+
+function normalizeRatioValue(ratio, fallback = DEFAULT_RATIO) {
+  return isValidRatioValue(ratio) ? ratio : fallback;
+}
+
+function normalizeSizeMode(value) {
+  return value === SIZE_MODE_RESOLUTION ? SIZE_MODE_RESOLUTION : SIZE_MODE_RATIO;
+}
+
+function normalizeResolutionDimension(value, fallback) {
+  const numeric = Number(value);
+
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return fallback;
+  }
+
+  return Math.round(numeric);
+}
+
+function normalizeResolutionInputValue(value) {
+  const numeric = Number(value);
+
+  if (!Number.isFinite(numeric)) {
+    return undefined;
+  }
+
+  return Math.max(0, Math.round(numeric));
+}
+
+function hasImageEntries(fileList) {
+  return Array.from(fileList || []).some((entry) =>
+    entry?.type?.startsWith?.('image/'),
+  );
+}
+
+function filterImageFiles(fileList) {
+  return Array.from(fileList || []).filter((file) =>
+    file?.type?.startsWith?.('image/'),
+  );
+}
 
 function ImagePlaygroundLoadingSurface({ theme }) {
   const hostRef = useRef(null);
@@ -396,7 +460,49 @@ function loadStoredConfig() {
     const raw = localStorage.getItem(IMAGE_STORAGE_KEY);
     if (!raw) return DEFAULT_CONFIG;
     const parsed = JSON.parse(raw);
-    return { ...DEFAULT_CONFIG, ...parsed };
+    const merged = { ...DEFAULT_CONFIG, ...parsed };
+    const textSizeMode = normalizeSizeMode(merged.textSizeMode);
+    const editSizeMode = normalizeSizeMode(merged.editSizeMode);
+    const textPrompt =
+      textSizeMode === SIZE_MODE_RESOLUTION
+        ? removeAspectRatioPrefix(merged.textPrompt || '').trimStart()
+        : merged.textPrompt || '';
+    const editPrompt =
+      editSizeMode === SIZE_MODE_RESOLUTION
+        ? removeAspectRatioPrefix(merged.editPrompt || '').trimStart()
+        : merged.editPrompt || '';
+
+    return {
+      ...merged,
+      textPrompt,
+      textRatio: normalizeRatioValue(
+        getPromptRatio(textPrompt) || merged.textRatio,
+        DEFAULT_CONFIG.textRatio,
+      ),
+      textSizeMode,
+      textResolutionWidth: normalizeResolutionDimension(
+        merged.textResolutionWidth,
+        DEFAULT_CONFIG.textResolutionWidth,
+      ),
+      textResolutionHeight: normalizeResolutionDimension(
+        merged.textResolutionHeight,
+        DEFAULT_CONFIG.textResolutionHeight,
+      ),
+      editPrompt,
+      editRatio: normalizeRatioValue(
+        getPromptRatio(editPrompt) || merged.editRatio,
+        DEFAULT_CONFIG.editRatio,
+      ),
+      editSizeMode,
+      editResolutionWidth: normalizeResolutionDimension(
+        merged.editResolutionWidth,
+        DEFAULT_CONFIG.editResolutionWidth,
+      ),
+      editResolutionHeight: normalizeResolutionDimension(
+        merged.editResolutionHeight,
+        DEFAULT_CONFIG.editResolutionHeight,
+      ),
+    };
   } catch (error) {
     return DEFAULT_CONFIG;
   }
@@ -439,6 +545,84 @@ function getPromptRatio(prompt) {
   if (!match) return '';
   const ratioMatch = match[0].match(/aspect ratio\s+([0-9]+:[0-9]+)/i);
   return ratioMatch?.[1] || '';
+}
+
+function formatResolutionSize(width, height) {
+  const numericWidth = Number(width);
+  const numericHeight = Number(height);
+
+  if (
+    !Number.isInteger(numericWidth) ||
+    !Number.isInteger(numericHeight) ||
+    numericWidth <= 0 ||
+    numericHeight <= 0
+  ) {
+    return '';
+  }
+
+  return `${numericWidth}x${numericHeight}`;
+}
+
+function getResolutionValidationError(width, height, t) {
+  const numericWidth = Number(width);
+  const numericHeight = Number(height);
+
+  if (
+    !Number.isInteger(numericWidth) ||
+    !Number.isInteger(numericHeight) ||
+    numericWidth <= 0 ||
+    numericHeight <= 0
+  ) {
+    return t('请输入有效的宽度和高度');
+  }
+
+  if (
+    numericWidth % RESOLUTION_STEP !== 0 ||
+    numericHeight % RESOLUTION_STEP !== 0
+  ) {
+    return t('宽度和高度都必须是 16 的倍数');
+  }
+
+  const longestEdge = Math.max(numericWidth, numericHeight);
+  const shortestEdge = Math.min(numericWidth, numericHeight);
+
+  if (longestEdge > MAX_RESOLUTION_EDGE) {
+    return t('最长边不能超过 {{size}} px', {
+      size: MAX_RESOLUTION_EDGE,
+    });
+  }
+
+  if (longestEdge / shortestEdge > MAX_RESOLUTION_RATIO) {
+    return t('宽高比例不能超过 {{ratio}}:1', {
+      ratio: MAX_RESOLUTION_RATIO,
+    });
+  }
+
+  if (numericWidth * numericHeight > MAX_RESOLUTION_PIXELS) {
+    return t('总像素不能超过 {{count}}', {
+      count: MAX_RESOLUTION_PIXELS.toLocaleString('en-US'),
+    });
+  }
+
+  return '';
+}
+
+function getPromptForRequest(prompt, sizeMode, ratio) {
+  const trimmed = prompt.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  const promptWithoutPrefix = removeAspectRatioPrefix(trimmed).trimStart();
+  if (!promptWithoutPrefix) {
+    return '';
+  }
+
+  if (sizeMode === SIZE_MODE_RESOLUTION) {
+    return promptWithoutPrefix;
+  }
+
+  return withAspectRatioPrefix(promptWithoutPrefix, normalizeRatioValue(ratio));
 }
 
 function normalizeImageResults(payload) {
@@ -579,7 +763,9 @@ const ImagePlayground = () => {
   const [galleryError, setGalleryError] = useState('');
   const [deletingImageId, setDeletingImageId] = useState(null);
   const [referenceImages, setReferenceImages] = useState([]);
+  const [isReferenceDragActive, setIsReferenceDragActive] = useState(false);
   const referenceImagesRef = useRef([]);
+  const referenceDragDepthRef = useRef(0);
   const textAbortRef = useRef(null);
   const editAbortRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -710,8 +896,83 @@ const ImagePlayground = () => {
     () => getPromptRatio(config.editPrompt),
     [config.editPrompt],
   );
-  const currentTextRatio = getRatioOption(textPromptRatio || '1:1');
-  const currentEditRatio = getRatioOption(editPromptRatio || '1:1');
+
+  useEffect(() => {
+    if (
+      textPromptRatio &&
+      textPromptRatio !== config.textRatio &&
+      isValidRatioValue(textPromptRatio)
+    ) {
+      updateConfig({ textRatio: textPromptRatio });
+    }
+  }, [config.textRatio, textPromptRatio, updateConfig]);
+
+  useEffect(() => {
+    if (
+      editPromptRatio &&
+      editPromptRatio !== config.editRatio &&
+      isValidRatioValue(editPromptRatio)
+    ) {
+      updateConfig({ editRatio: editPromptRatio });
+    }
+  }, [config.editRatio, editPromptRatio, updateConfig]);
+
+  const currentTextRatio = useMemo(
+    () => getRatioOption(config.textRatio),
+    [config.textRatio],
+  );
+  const currentEditRatio = useMemo(
+    () => getRatioOption(config.editRatio),
+    [config.editRatio],
+  );
+  const textResolutionSize = useMemo(
+    () =>
+      formatResolutionSize(
+        config.textResolutionWidth,
+        config.textResolutionHeight,
+      ),
+    [config.textResolutionHeight, config.textResolutionWidth],
+  );
+  const editResolutionSize = useMemo(
+    () =>
+      formatResolutionSize(
+        config.editResolutionWidth,
+        config.editResolutionHeight,
+      ),
+    [config.editResolutionHeight, config.editResolutionWidth],
+  );
+  const textResolutionError = useMemo(
+    () =>
+      config.textSizeMode === SIZE_MODE_RESOLUTION
+        ? getResolutionValidationError(
+            config.textResolutionWidth,
+            config.textResolutionHeight,
+            t,
+          )
+        : '',
+    [
+      config.textResolutionHeight,
+      config.textResolutionWidth,
+      config.textSizeMode,
+      t,
+    ],
+  );
+  const editResolutionError = useMemo(
+    () =>
+      config.editSizeMode === SIZE_MODE_RESOLUTION
+        ? getResolutionValidationError(
+            config.editResolutionWidth,
+            config.editResolutionHeight,
+            t,
+          )
+        : '',
+    [
+      config.editResolutionHeight,
+      config.editResolutionWidth,
+      config.editSizeMode,
+      t,
+    ],
+  );
 
   const clearReferenceImages = useCallback(() => {
     setReferenceImages((prev) => {
@@ -742,9 +1003,35 @@ const ImagePlayground = () => {
     return true;
   }, []);
 
-  const updatePromptRatio = useCallback((field, ratio) => {
+  const updateSizeMode = useCallback((modeField, promptField, ratioField, nextMode) => {
     setConfig((prev) => {
-      const prompt = prev[field] || '';
+      if (prev[modeField] === nextMode) {
+        return prev;
+      }
+
+      const prompt = prev[promptField] || '';
+      const promptWithoutPrefix = removeAspectRatioPrefix(prompt).trimStart();
+      const nextPrompt =
+        nextMode === SIZE_MODE_RESOLUTION
+          ? promptWithoutPrefix
+          : promptWithoutPrefix
+            ? withAspectRatioPrefix(
+                promptWithoutPrefix,
+                normalizeRatioValue(prev[ratioField]),
+              )
+            : '';
+
+      return {
+        ...prev,
+        [modeField]: nextMode,
+        [promptField]: nextPrompt,
+      };
+    });
+  }, []);
+
+  const updatePromptRatio = useCallback((promptField, ratioField, ratio) => {
+    setConfig((prev) => {
+      const prompt = prev[promptField] || '';
       const promptWithoutPrefix = removeAspectRatioPrefix(prompt).trimStart();
       const nextPrompt = promptWithoutPrefix
         ? withAspectRatioPrefix(promptWithoutPrefix, ratio)
@@ -752,7 +1039,8 @@ const ImagePlayground = () => {
 
       return {
         ...prev,
-        [field]: nextPrompt,
+        [ratioField]: ratio,
+        [promptField]: nextPrompt,
       };
     });
   }, []);
@@ -802,10 +1090,26 @@ const ImagePlayground = () => {
   const runTextGeneration = useCallback(async () => {
     if (textGenerating) return;
     if (!ensureModelSelected()) return;
-    if (!config.textPrompt.trim()) {
+    const prompt = getPromptForRequest(
+      config.textPrompt,
+      config.textSizeMode,
+      config.textRatio,
+    );
+
+    if (!prompt) {
       Toast.warning(t('请填写提示词'));
       return;
     }
+
+    if (config.textSizeMode === SIZE_MODE_RESOLUTION && textResolutionError) {
+      Toast.warning(textResolutionError);
+      return;
+    }
+
+    const size =
+      config.textSizeMode === SIZE_MODE_RESOLUTION
+        ? textResolutionSize
+        : currentTextRatio.size;
 
     setTextGenerating(true);
     setTextError('');
@@ -825,9 +1129,9 @@ const ImagePlayground = () => {
           body: JSON.stringify({
             model: IMAGE_MODEL,
             group: config.group,
-            prompt: config.textPrompt.trim(),
+            prompt,
             n: config.textCount,
-            size: currentTextRatio.size,
+            size,
           }),
           signal: controller.signal,
         },
@@ -849,7 +1153,7 @@ const ImagePlayground = () => {
       } else {
         await persistGeneratedImages(
           'text2img',
-          config.textPrompt.trim(),
+          prompt,
           results,
         );
         Toast.success(
@@ -871,10 +1175,14 @@ const ImagePlayground = () => {
     config.group,
     config.textCount,
     config.textPrompt,
+    config.textRatio,
+    config.textSizeMode,
     currentTextRatio.size,
     ensureModelSelected,
     persistGeneratedImages,
     t,
+    textResolutionError,
+    textResolutionSize,
     textGenerating,
   ]);
 
@@ -885,10 +1193,26 @@ const ImagePlayground = () => {
       Toast.warning(t('请先上传至少一张参考图'));
       return;
     }
-    if (!config.editPrompt.trim()) {
+    const prompt = getPromptForRequest(
+      config.editPrompt,
+      config.editSizeMode,
+      config.editRatio,
+    );
+
+    if (!prompt) {
       Toast.warning(t('请描述希望的改动'));
       return;
     }
+
+    if (config.editSizeMode === SIZE_MODE_RESOLUTION && editResolutionError) {
+      Toast.warning(editResolutionError);
+      return;
+    }
+
+    const size =
+      config.editSizeMode === SIZE_MODE_RESOLUTION
+        ? editResolutionSize
+        : currentEditRatio.size;
 
     setEditGenerating(true);
     setEditError('');
@@ -900,9 +1224,9 @@ const ImagePlayground = () => {
       const formData = new FormData();
       formData.append('model', IMAGE_MODEL);
       formData.append('group', config.group);
-      formData.append('prompt', config.editPrompt.trim());
+      formData.append('prompt', prompt);
       formData.append('n', '1');
-      formData.append('size', currentEditRatio.size);
+      formData.append('size', size);
 
       referenceImages.forEach((item, index) => {
         formData.append(
@@ -937,7 +1261,7 @@ const ImagePlayground = () => {
       } else {
         await persistGeneratedImages(
           'img2img',
-          config.editPrompt.trim(),
+          prompt,
           results,
         );
         Toast.success(
@@ -958,7 +1282,11 @@ const ImagePlayground = () => {
   }, [
     config.editPrompt,
     config.group,
+    config.editRatio,
+    config.editSizeMode,
     currentEditRatio.size,
+    editResolutionError,
+    editResolutionSize,
     editGenerating,
     ensureModelSelected,
     persistGeneratedImages,
@@ -1001,10 +1329,12 @@ const ImagePlayground = () => {
     [deletingImageId, t],
   );
 
-  const handleReferenceFileChange = useCallback(
-    (event) => {
-      const files = Array.from(event.target.files || []);
-      if (files.length === 0) return;
+  const appendReferenceFiles = useCallback(
+    (fileList) => {
+      const files = filterImageFiles(fileList);
+      if (files.length === 0) {
+        return;
+      }
 
       setReferenceImages((prev) => {
         const next = [...prev];
@@ -1044,10 +1374,75 @@ const ImagePlayground = () => {
 
         return next;
       });
-
-      event.target.value = '';
     },
     [t],
+  );
+
+  const handleReferenceFileChange = useCallback(
+    (event) => {
+      appendReferenceFiles(event.target.files);
+      event.target.value = '';
+    },
+    [appendReferenceFiles],
+  );
+
+  const handleReferenceDragEnter = useCallback((event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!hasImageEntries(event.dataTransfer?.items)) {
+      return;
+    }
+
+    referenceDragDepthRef.current += 1;
+    setIsReferenceDragActive(true);
+  }, []);
+
+  const handleReferenceDragOver = useCallback(
+    (event) => {
+      if (!hasImageEntries(event.dataTransfer?.items)) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer.dropEffect = 'copy';
+
+      if (!isReferenceDragActive) {
+        setIsReferenceDragActive(true);
+      }
+    },
+    [isReferenceDragActive],
+  );
+
+  const handleReferenceDragLeave = useCallback((event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!hasImageEntries(event.dataTransfer?.items)) {
+      return;
+    }
+
+    referenceDragDepthRef.current = Math.max(
+      0,
+      referenceDragDepthRef.current - 1,
+    );
+
+    if (referenceDragDepthRef.current === 0) {
+      setIsReferenceDragActive(false);
+    }
+  }, []);
+
+  const handleReferenceDrop = useCallback(
+    (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      referenceDragDepthRef.current = 0;
+      setIsReferenceDragActive(false);
+      appendReferenceFiles(event.dataTransfer?.files);
+    },
+    [appendReferenceFiles],
   );
 
   const removeReferenceImage = useCallback((id) => {
@@ -1082,6 +1477,19 @@ const ImagePlayground = () => {
     document.body.removeChild(anchor);
   }, []);
 
+  const renderSizeModeSelector = (value, onChange) => (
+    <RadioGroup
+      type='button'
+      size='small'
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className='image-playground-size-mode-group'
+    >
+      <Radio value={SIZE_MODE_RATIO}>{t('比例')}</Radio>
+      <Radio value={SIZE_MODE_RESOLUTION}>{t('分辨率')}</Radio>
+    </RadioGroup>
+  );
+
   const renderRatioSelector = (value, onChange) => (
     <div className='image-playground-ratio-grid'>
       {RATIOS.map((ratio) => (
@@ -1103,6 +1511,63 @@ const ImagePlayground = () => {
           </Text>
         </button>
       ))}
+    </div>
+  );
+
+  const renderResolutionInputs = (
+    width,
+    height,
+    onWidthChange,
+    onHeightChange,
+    error,
+  ) => (
+    <div className='image-playground-resolution-panel'>
+      <div className='image-playground-resolution-grid'>
+        <div className='image-playground-resolution-field'>
+          <Text strong>{t('宽度')}</Text>
+          <InputNumber
+            value={width}
+            min={0}
+            step={RESOLUTION_STEP}
+            precision={0}
+            placeholder='1024'
+            style={{ width: '100%' }}
+            onNumberChange={(value) =>
+              onWidthChange(normalizeResolutionInputValue(value))
+            }
+          />
+        </div>
+        <div className='image-playground-resolution-field'>
+          <Text strong>{t('高度')}</Text>
+          <InputNumber
+            value={height}
+            min={0}
+            step={RESOLUTION_STEP}
+            precision={0}
+            placeholder='1024'
+            style={{ width: '100%' }}
+            onNumberChange={(value) =>
+              onHeightChange(normalizeResolutionInputValue(value))
+            }
+          />
+        </div>
+      </div>
+      <Text className='image-playground-hint'>
+        {t(
+          '最长边不超过 {{size}} px，宽高为 16 的倍数，比例不超过 {{ratio}}:1，总像素不超过 {{count}}。',
+          {
+            size: MAX_RESOLUTION_EDGE,
+            ratio: MAX_RESOLUTION_RATIO,
+            count: MAX_RESOLUTION_PIXELS.toLocaleString('en-US'),
+          },
+        )}
+      </Text>
+      <Text className='image-playground-hint image-playground-resolution-note'>
+        {t('仅按量付费生图 api 可用')}
+      </Text>
+      {error ? (
+        <Text className='image-playground-resolution-error'>{error}</Text>
+      ) : null}
     </div>
   );
 
@@ -1399,12 +1864,34 @@ const ImagePlayground = () => {
                 <>
                   <div className='image-playground-section'>
                     <div className='image-playground-section-header'>
-                      <Text strong>{t('画面比例')}</Text>
-                      <Tag>{textPromptRatio || '1:1'}</Tag>
+                      <Text strong>{t('输出尺寸')}</Text>
+                      <Tag>
+                        {config.textSizeMode === SIZE_MODE_RESOLUTION
+                          ? textResolutionSize || '--'
+                          : currentTextRatio.ratio}
+                      </Tag>
                     </div>
-                    {renderRatioSelector(textPromptRatio, (ratio) =>
-                      updatePromptRatio('textPrompt', ratio),
+                    {renderSizeModeSelector(config.textSizeMode, (value) =>
+                      updateSizeMode(
+                        'textSizeMode',
+                        'textPrompt',
+                        'textRatio',
+                        value,
+                      ),
                     )}
+                    {config.textSizeMode === SIZE_MODE_RATIO
+                      ? renderRatioSelector(config.textRatio, (ratio) =>
+                          updatePromptRatio('textPrompt', 'textRatio', ratio),
+                        )
+                      : renderResolutionInputs(
+                          config.textResolutionWidth,
+                          config.textResolutionHeight,
+                          (value) =>
+                            updateConfig({ textResolutionWidth: value }),
+                          (value) =>
+                            updateConfig({ textResolutionHeight: value }),
+                          textResolutionError,
+                        )}
                   </div>
 
                   <div className='image-playground-section'>
@@ -1437,9 +1924,10 @@ const ImagePlayground = () => {
                           className='image-playground-chip'
                           onClick={() =>
                             updateConfig({
-                              textPrompt: textPromptRatio
-                                ? withAspectRatioPrefix(prompt, textPromptRatio)
-                                : prompt,
+                              textPrompt:
+                                config.textSizeMode === SIZE_MODE_RATIO
+                                  ? withAspectRatioPrefix(prompt, config.textRatio)
+                                  : prompt,
                             })
                           }
                         >
@@ -1456,6 +1944,10 @@ const ImagePlayground = () => {
                     size='large'
                     icon={<Sparkles size={16} />}
                     loading={textGenerating}
+                    disabled={
+                      config.textSizeMode === SIZE_MODE_RESOLUTION &&
+                      Boolean(textResolutionError)
+                    }
                     onClick={runTextGeneration}
                   >
                     {t('生成图片')}
@@ -1487,9 +1979,18 @@ const ImagePlayground = () => {
                       hidden
                       onChange={handleReferenceFileChange}
                     />
-                    <div className='image-playground-upload-box'>
+                    <div
+                      className={`image-playground-upload-box${isReferenceDragActive ? ' is-drag-active' : ''}`}
+                      onDragEnter={handleReferenceDragEnter}
+                      onDragOver={handleReferenceDragOver}
+                      onDragLeave={handleReferenceDragLeave}
+                      onDrop={handleReferenceDrop}
+                    >
                       <Upload size={20} />
                       <Text strong>{t('点击选择图片')}</Text>
+                      <Text className='image-playground-hint'>
+                        {t('拖拽图片到这里')}
+                      </Text>
                       <Text className='image-playground-hint'>
                         {t('最多上传 {{count}} 张参考图', {
                           count: MAX_REFERENCE_IMAGES,
@@ -1531,12 +2032,34 @@ const ImagePlayground = () => {
 
                   <div className='image-playground-section'>
                     <div className='image-playground-section-header'>
-                      <Text strong>{t('输出比例')}</Text>
-                      <Tag>{editPromptRatio || '1:1'}</Tag>
+                      <Text strong>{t('输出尺寸')}</Text>
+                      <Tag>
+                        {config.editSizeMode === SIZE_MODE_RESOLUTION
+                          ? editResolutionSize || '--'
+                          : currentEditRatio.ratio}
+                      </Tag>
                     </div>
-                    {renderRatioSelector(editPromptRatio, (ratio) =>
-                      updatePromptRatio('editPrompt', ratio),
+                    {renderSizeModeSelector(config.editSizeMode, (value) =>
+                      updateSizeMode(
+                        'editSizeMode',
+                        'editPrompt',
+                        'editRatio',
+                        value,
+                      ),
                     )}
+                    {config.editSizeMode === SIZE_MODE_RATIO
+                      ? renderRatioSelector(config.editRatio, (ratio) =>
+                          updatePromptRatio('editPrompt', 'editRatio', ratio),
+                        )
+                      : renderResolutionInputs(
+                          config.editResolutionWidth,
+                          config.editResolutionHeight,
+                          (value) =>
+                            updateConfig({ editResolutionWidth: value }),
+                          (value) =>
+                            updateConfig({ editResolutionHeight: value }),
+                          editResolutionError,
+                        )}
                   </div>
 
                   <div className='image-playground-section'>
@@ -1556,6 +2079,10 @@ const ImagePlayground = () => {
                     size='large'
                     icon={<SquarePen size={16} />}
                     loading={editGenerating}
+                    disabled={
+                      config.editSizeMode === SIZE_MODE_RESOLUTION &&
+                      Boolean(editResolutionError)
+                    }
                     onClick={runImageEdit}
                   >
                     {t('生成图片')}

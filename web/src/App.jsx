@@ -46,6 +46,8 @@ import ModelDeploymentPage from './pages/ModelDeployment';
 import Playground from './pages/Playground';
 import ImagePlayground from './pages/ImagePlayground';
 import Subscription from './pages/Subscription';
+import SubscriptionActivationCodes from './pages/SubscriptionActivationCodes';
+import ActivateSubscription from './pages/ActivateSubscription';
 import OAuth2Callback from './components/auth/OAuth2Callback';
 import PersonalSetting from './components/settings/PersonalSetting';
 import Setup from './pages/Setup';
@@ -173,6 +175,14 @@ function App() {
           }
         />
         <Route
+          path='/console/activation-codes'
+          element={
+            <AdminRoute>
+              <SubscriptionActivationCodes />
+            </AdminRoute>
+          }
+        />
+        <Route
           path='/console/user'
           element={
             <AdminRoute>
@@ -282,6 +292,16 @@ function App() {
             <PrivateRoute>
               <Suspense fallback={<Loading></Loading>} key={location.pathname}>
                 <TopUp />
+              </Suspense>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path='/console/activate-subscription'
+          element={
+            <PrivateRoute>
+              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+                <ActivateSubscription />
               </Suspense>
             </PrivateRoute>
           }

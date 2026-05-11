@@ -49,6 +49,60 @@ import {
   useSidebar,
 } from '../../../../hooks/common/useSidebar';
 
+const defaultSidebarModulesUser = {
+  chat: {
+    enabled: true,
+    playground: true,
+    image: true,
+    chat: true,
+  },
+  console: {
+    enabled: true,
+    detail: true,
+    token: true,
+    log: true,
+    midjourney: true,
+    task: true,
+  },
+  personal: {
+    enabled: true,
+    topup: true,
+    subscription_activation: true,
+    personal: true,
+  },
+  admin: {
+    enabled: true,
+    channel: true,
+    models: true,
+    deployment: true,
+    subscription: true,
+    redemption: true,
+    activation_code: true,
+    user: true,
+    setting: true,
+  },
+};
+
+const mergeUserSidebarModules = (savedConfig) => {
+  const merged = JSON.parse(JSON.stringify(defaultSidebarModulesUser));
+  if (!savedConfig || typeof savedConfig !== 'object') {
+    return merged;
+  }
+
+  Object.entries(savedConfig).forEach(([sectionKey, sectionConfig]) => {
+    if (!sectionConfig || typeof sectionConfig !== 'object') {
+      return;
+    }
+    if (!merged[sectionKey]) {
+      merged[sectionKey] = { ...sectionConfig };
+      return;
+    }
+    merged[sectionKey] = { ...merged[sectionKey], ...sectionConfig };
+  });
+
+  return merged;
+};
+
 const NotificationSettings = ({
   t,
   notificationSettings,
@@ -63,37 +117,9 @@ const NotificationSettings = ({
   // 左侧边栏设置相关状态
   const [sidebarLoading, setSidebarLoading] = useState(false);
   const [activeTabKey, setActiveTabKey] = useState('notification');
-  const [sidebarModulesUser, setSidebarModulesUser] = useState({
-    chat: {
-      enabled: true,
-      playground: true,
-      image: true,
-      chat: true,
-    },
-    console: {
-      enabled: true,
-      detail: true,
-      token: true,
-      log: true,
-      midjourney: true,
-      task: true,
-    },
-    personal: {
-      enabled: true,
-      topup: true,
-      personal: true,
-    },
-    admin: {
-      enabled: true,
-      channel: true,
-      models: true,
-      deployment: true,
-      subscription: true,
-      redemption: true,
-      user: true,
-      setting: true,
-    },
-  });
+  const [sidebarModulesUser, setSidebarModulesUser] = useState(
+    defaultSidebarModulesUser,
+  );
   const [adminConfig, setAdminConfig] = useState(null);
 
   // 使用后端权限验证替代前端角色判断
@@ -156,29 +182,7 @@ const NotificationSettings = ({
   };
 
   const resetSidebarModules = () => {
-    const defaultConfig = {
-      chat: { enabled: true, playground: true, image: true, chat: true },
-      console: {
-        enabled: true,
-        detail: true,
-        token: true,
-        log: true,
-        midjourney: true,
-        task: true,
-      },
-      personal: { enabled: true, topup: true, personal: true },
-      admin: {
-        enabled: true,
-        channel: true,
-        models: true,
-        deployment: true,
-        subscription: true,
-        redemption: true,
-        user: true,
-        setting: true,
-      },
-    };
-    setSidebarModulesUser(defaultConfig);
+    setSidebarModulesUser(defaultSidebarModulesUser);
   };
 
   // 加载左侧边栏配置
@@ -208,7 +212,7 @@ const NotificationSettings = ({
           } else {
             userConf = userRes.data.data.sidebar_modules;
           }
-          setSidebarModulesUser(userConf);
+          setSidebarModulesUser(mergeUserSidebarModules(userConf));
         }
       } catch (error) {
         console.error('加载边栏配置失败:', error);
@@ -286,6 +290,11 @@ const NotificationSettings = ({
       modules: [
         { key: 'topup', title: t('钱包管理'), description: t('余额充值管理') },
         {
+          key: 'subscription_activation',
+          title: t('激活订阅'),
+          description: t('使用激活码开通或替换订阅'),
+        },
+        {
           key: 'personal',
           title: t('个人设置'),
           description: t('个人信息设置'),
@@ -314,6 +323,11 @@ const NotificationSettings = ({
           key: 'redemption',
           title: t('兑换码管理'),
           description: t('兑换码生成管理'),
+        },
+        {
+          key: 'activation_code',
+          title: t('激活码管理'),
+          description: t('订阅激活码生成管理'),
         },
         { key: 'user', title: t('用户管理'), description: t('用户账户管理') },
         {
