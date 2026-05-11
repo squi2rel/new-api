@@ -3827,7 +3827,7 @@
     "宽高比例不能超过 {{ratio}}:1": "The aspect ratio must not exceed {{ratio}}:1",
     "总像素不能超过 {{count}}": "Total pixels must not exceed {{count}}",
     "最长边不超过 {{size}} px，宽高为 16 的倍数，比例不超过 {{ratio}}:1，总像素不超过 {{count}}。": "Longest edge <= {{size}} px, both sides must be multiples of 16, aspect ratio <= {{ratio}}:1, and total pixels <= {{count}}.",
-    "仅按量付费生图 api 可用": "Only available for pay-per-use image generation APIs",
+    "仅非free可用": "Only available for non-free APIs",
     "希望如何改动": "What should change",
     "例如：保持主体不变，把背景改成现代展厅": "Example: keep the subject and change the background to a modern showroom",
     "画面比例": "Aspect ratio",

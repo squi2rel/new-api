@@ -1563,7 +1563,7 @@ const ImagePlayground = () => {
         )}
       </Text>
       <Text className='image-playground-hint image-playground-resolution-note'>
-        {t('仅按量付费生图 api 可用')}
+        {t('仅非free可用')}
       </Text>
       {error ? (
         <Text className='image-playground-resolution-error'>{error}</Text>
